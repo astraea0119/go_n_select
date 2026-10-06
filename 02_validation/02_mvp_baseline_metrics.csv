@@ -1,0 +1,5 @@
+﻿metric,value,unit,description
+operating_function_unit_test_accuracy,100.0,percent,운영시간 판단 함수 10개 단위테스트 성공률
+core_operating_confirmation_rate,40.0,percent,핵심 목적지 50개 시간 시나리오 중 확정판단 가능률
+alternative_candidate_available_rate,24.4,percent,대체 후보 250개 관계-시간 시나리오 중 추천 가능 비율
+alternative_scenario_coverage_rate,64.0,percent,50개 사용자 상황 중 확정 대체지 1곳 이상 제공 가능률
