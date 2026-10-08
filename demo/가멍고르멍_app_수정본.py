@@ -1134,10 +1134,6 @@ def build_live_traffic_heatmap_data(
         ]
     ).copy()
 
-    heatmap_data = heatmap_data[
-        heatmap_data["traffic_weight"] > 0
-    ].copy()
-
     if heatmap_data.empty:
         return pd.DataFrame()
 
