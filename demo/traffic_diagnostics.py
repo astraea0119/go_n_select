@@ -21,6 +21,7 @@ _EVENT_FIELDS = {
             "none", "timeout", "connection", "http_status",
             "invalid_json", "response_invalid", "other"
         },
+        "timeout_phase": {"connect", "read", "other"},
     },
     "response_validation": {
         "outcome": {
@@ -130,6 +131,16 @@ def _error_category(error):
     return "other"
 
 
+def _timeout_phase(error):
+    if isinstance(error, requests.ConnectTimeout):
+        return "connect"
+    if isinstance(error, requests.ReadTimeout):
+        return "read"
+    if isinstance(error, requests.Timeout):
+        return "other"
+    return None
+
+
 def traffic_error_category(error):
     return _error_category(error)
 
@@ -169,6 +180,7 @@ def fetch_hourly_traffic(api_key, visit_date, visit_time):
             http_status=None,
             elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
             error=_error_category(error),
+            timeout_phase=_timeout_phase(error),
         )
         raise
 

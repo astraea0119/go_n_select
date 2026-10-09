@@ -176,6 +176,20 @@ class TrafficDiagnosticsTests(unittest.TestCase):
             self.assertNotIn("code=", output)
             self.assertNotIn(str(error), output)
 
+    def test_timeout_phase_is_allowlisted_without_error_text(self):
+        for error, expected_phase in [
+            (requests.ConnectTimeout(f"connect {FAKE_KEY}"), "connect"),
+            (requests.ReadTimeout(f"read {FAKE_KEY}"), "read"),
+        ]:
+            with self.subTest(phase=expected_phase):
+                _, caught, _, output = self.call_fetch(side_effect=error)
+                record = emitted_records(output)[-1]
+                self.assertIs(caught, error)
+                self.assertEqual(record["error"], "timeout")
+                self.assertEqual(record["timeout_phase"], expected_phase)
+                self.assertNotIn(FAKE_KEY, output)
+                self.assertNotIn(str(error), output)
+
     def test_http_error_logs_status_only(self):
         error = requests.HTTPError(
             f"HTTP failed {FAKE_KEY}",
