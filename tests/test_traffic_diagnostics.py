@@ -70,6 +70,32 @@ def load_heatmap_functions():
 
 
 class TrafficDiagnosticsTests(unittest.TestCase):
+    def test_app_request_calls_match_helper_signature(self):
+        helper_path = ROOT / "demo" / "traffic_diagnostics.py"
+        helper_tree = ast.parse(helper_path.read_text(encoding="utf-8"))
+        helper = next(
+            node for node in helper_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "fetch_hourly_traffic"
+        )
+        required_args = len(helper.args.args) - len(helper.args.defaults)
+
+        app_path = ROOT / "demo" / "가멍고르멍_app_수정본.py"
+        app_tree = ast.parse(app_path.read_text(encoding="utf-8"))
+        calls = [
+            node for node in ast.walk(app_tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "fetch_hourly_traffic"
+        ]
+
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertEqual(
+                len(call.args), required_args,
+                f"line {call.lineno} passes the wrong number of arguments",
+            )
+
     def call_fetch(self, response=None, side_effect=None):
         stream = io.StringIO()
         with contextlib.redirect_stdout(stream):

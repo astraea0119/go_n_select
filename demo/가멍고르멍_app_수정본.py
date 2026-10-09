@@ -326,6 +326,7 @@ def fetch_latest_available_traffic(
 
         try:
             result = fetch_hourly_traffic(
+                ITS_API_KEY,
                 target_date,
                 target_time
             )
@@ -1428,6 +1429,7 @@ if selected_place:
     else:
         try:
             traffic_result = fetch_hourly_traffic(
+                ITS_API_KEY,
                 visit_date,
                 visit_time
             )
