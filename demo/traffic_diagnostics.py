@@ -92,7 +92,10 @@ def emit_traffic_diagnostic(event, **fields):
                 record[name] = None
 
     try:
-        print("TRAFFIC_DIAG " + json.dumps(record, separators=(",", ":")))
+        print(
+            "TRAFFIC_DIAG " + json.dumps(record, separators=(",", ":")),
+            flush=True,
+        )
     except Exception:
         # Logging must not change request, data, or fallback behavior.
         pass

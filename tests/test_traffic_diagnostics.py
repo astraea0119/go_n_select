@@ -70,6 +70,19 @@ def load_heatmap_functions():
 
 
 class TrafficDiagnosticsTests(unittest.TestCase):
+    def test_diagnostic_output_flushes_immediately(self):
+        with patch("builtins.print") as output:
+            diagnostics.emit_traffic_diagnostic(
+                "request_started", started=True
+            )
+
+        output.assert_called_once()
+        self.assertEqual(output.call_args.kwargs, {"flush": True})
+        self.assertEqual(
+            output.call_args.args,
+            ('TRAFFIC_DIAG {"event":"request_started","started":true}',),
+        )
+
     def test_app_request_calls_match_helper_signature(self):
         helper_path = ROOT / "demo" / "traffic_diagnostics.py"
         helper_tree = ast.parse(helper_path.read_text(encoding="utf-8"))
