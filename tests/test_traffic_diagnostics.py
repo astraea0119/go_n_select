@@ -109,6 +109,12 @@ class TrafficDiagnosticsTests(unittest.TestCase):
                 f"line {call.lineno} passes the wrong number of arguments",
             )
 
+        app_text = app_path.read_text(encoding="utf-8")
+        self.assertIn(
+            'print("TRAFFIC_DIAG_APP timeout_phase_probe_v1", flush=True)',
+            app_text,
+        )
+
     def call_fetch(self, response=None, side_effect=None):
         stream = io.StringIO()
         with contextlib.redirect_stdout(stream):

@@ -1428,6 +1428,7 @@ if selected_place:
 
     else:
         try:
+            print("TRAFFIC_DIAG_APP timeout_phase_probe_v1", flush=True)
             traffic_result = fetch_hourly_traffic(
                 ITS_API_KEY,
                 visit_date,
