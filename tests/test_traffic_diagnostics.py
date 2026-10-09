@@ -111,7 +111,7 @@ class TrafficDiagnosticsTests(unittest.TestCase):
 
         app_text = app_path.read_text(encoding="utf-8")
         self.assertIn(
-            'print("TRAFFIC_DIAG_APP timeout_phase_probe_v1", flush=True)',
+            'print("TRAFFIC_DIAG_APP dns_probe_v1", flush=True)',
             app_text,
         )
 
@@ -195,6 +195,41 @@ class TrafficDiagnosticsTests(unittest.TestCase):
                 self.assertEqual(record["timeout_phase"], expected_phase)
                 self.assertNotIn(FAKE_KEY, output)
                 self.assertNotIn(str(error), output)
+
+    def test_endpoint_dns_logs_only_allowlisted_summary(self):
+        for ip, expected_match in [
+            ("211.184.198.204", True),
+            ("211.184.198.210", False),
+        ]:
+            with self.subTest(ip=ip):
+                result = (2, 1, 6, "", (ip, 80))
+                stream = io.StringIO()
+                with contextlib.redirect_stdout(stream):
+                    with patch.object(
+                        diagnostics.socket, "getaddrinfo", return_value=[result]
+                    ):
+                        diagnostics.diagnose_endpoint_dns()
+                record = emitted_records(stream.getvalue())[0]
+                self.assertEqual(record, {
+                    "event": "endpoint_dns",
+                    "outcome": "resolved",
+                    "address_count": 1,
+                    "matches_documented_ip": expected_match,
+                })
+                self.assertNotIn(ip, stream.getvalue())
+
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            with patch.object(
+                diagnostics.socket, "getaddrinfo", side_effect=OSError("dns fail")
+            ):
+                diagnostics.diagnose_endpoint_dns()
+        self.assertEqual(emitted_records(stream.getvalue())[0], {
+            "event": "endpoint_dns",
+            "outcome": "resolution_error",
+            "address_count": 0,
+            "matches_documented_ip": False,
+        })
 
     def test_http_error_logs_status_only(self):
         error = requests.HTTPError(

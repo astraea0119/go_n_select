@@ -1,6 +1,7 @@
 """Safe, low-detail diagnostics for the live traffic request path."""
 
 import json
+import socket
 import time
 from datetime import datetime
 
@@ -14,6 +15,11 @@ _EVENT_FIELDS = {
         "reason": {"secret_missing", "fresh_cache", "place_unselected"}
     },
     "request_started": {"started": bool},
+    "endpoint_dns": {
+        "outcome": {"resolved", "resolution_error"},
+        "address_count": int,
+        "matches_documented_ip": bool,
+    },
     "request_result": {
         "http_status": int,
         "elapsed_ms": int,
@@ -141,6 +147,26 @@ def _timeout_phase(error):
     return None
 
 
+def diagnose_endpoint_dns():
+    """Log a privacy-safe DNS summary for the documented ITS hostname."""
+    try:
+        addresses = {
+            result[4][0]
+            for result in socket.getaddrinfo(
+                "api.jejuits.go.kr", 80, type=socket.SOCK_STREAM
+            )
+        }
+    except Exception:
+        addresses = set()
+
+    emit_traffic_diagnostic(
+        "endpoint_dns",
+        outcome="resolved" if addresses else "resolution_error",
+        address_count=len(addresses),
+        matches_documented_ip="211.184.198.204" in addresses,
+    )
+
+
 def traffic_error_category(error):
     return _error_category(error)
 
@@ -166,6 +192,7 @@ def fetch_hourly_traffic(api_key, visit_date, visit_time):
         }
 
     emit_traffic_diagnostic("request_started", started=True)
+    diagnose_endpoint_dns()
     started_at = time.monotonic()
 
     try:
