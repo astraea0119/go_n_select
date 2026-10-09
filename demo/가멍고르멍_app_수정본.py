@@ -2,10 +2,14 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 from urllib.parse import urlencode
-try:
-    ITS_API_KEY = st.secrets["ITS_API_KEY"]
-except Exception:
-    ITS_API_KEY = ""
+from traffic_diagnostics import (
+    emit_traffic_diagnostic,
+    fetch_hourly_traffic,
+    read_its_api_key,
+    traffic_error_category,
+)
+
+ITS_API_KEY, ITS_API_KEY_STATUS = read_its_api_key(st.secrets)
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -299,144 +303,6 @@ def diagnose_its_network():
             )
 
     return result
-
-def fetch_hourly_traffic(
-    visit_date,
-    visit_time
-):
-    visit_dt = datetime.strptime(
-        f"{visit_date} {visit_time}",
-        "%Y-%m-%d %H:%M"
-    )
-
-    stat_dt = visit_dt.strftime(
-        "%Y%m%d%H"
-    )
-
-    if not ITS_API_KEY:
-        return {
-            "available": False,
-            "stat_dt": stat_dt,
-            "result": "secret_unavailable",
-            "info_cnt": 0,
-            "data": pd.DataFrame()
-        }
-
-    response = requests.get(
-        "http://api.jejuits.go.kr/api/getFrafficInfo",
-        params={
-            "code": ITS_API_KEY,
-            "type": "L"
-        },
-        timeout=10
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-    
-    print(f"[ITS DEBUG] status={response.status_code}, result={data.get('result')}, info_cnt={len(data.get('info', []))}, keys={list(data.keys())}")
-
-    if data.get("result") != "success":
-        return {
-            "available": False,
-            "stat_dt": stat_dt,
-            "result": data.get("result"),
-            "info_cnt": 0,
-            "data": pd.DataFrame()
-        }
-
-    info = data.get(
-        "info",
-        []
-    )
-
-    if len(info) == 0:
-        return {
-            "available": False,
-            "stat_dt": stat_dt,
-            "result": "success",
-            "info_cnt": 0,
-            "data": pd.DataFrame()
-        }
-
-    hourly_df = pd.DataFrame(
-        info
-    )
-
-    required_columns = [
-        "link_id",
-        "sped",
-        "trvl_hh"
-    ]
-
-    missing_columns = [
-        column
-        for column in required_columns
-        if column not in hourly_df.columns
-    ]
-
-    if missing_columns:
-        raise ValueError(
-            "ITS 응답 필수 컬럼 누락: "
-            + ", ".join(missing_columns)
-        )
-
-    hourly_df["link_id"] = (
-        hourly_df["link_id"]
-        .astype("string")
-        .str.strip()
-    )
-
-    hourly_df["sped"] = pd.to_numeric(
-        hourly_df["sped"],
-        errors="coerce"
-    )
-
-    hourly_df["trvl_hh"] = pd.to_numeric(
-        hourly_df["trvl_hh"],
-        errors="coerce"
-    )
-
-    if "prcn_dt" not in hourly_df.columns:
-        raise ValueError(
-            "ITS 실시간 응답에 prcn_dt가 없습니다."
-        )
-
-    hourly_df["prcn_dt"] = (
-        hourly_df["prcn_dt"]
-        .astype("string")
-        .str.strip()
-    )
-
-    prcn_dt_values = (
-        hourly_df["prcn_dt"]
-        .dropna()
-        .unique()
-    )
-
-    if len(prcn_dt_values) != 1:
-        raise ValueError(
-            "ITS 실시간 응답 기준시각이 "
-            "하나로 일치하지 않습니다."
-        )
-
-    actual_prcn_dt = str(
-        prcn_dt_values[0]
-    )
-
-    actual_stat_dt = (
-        actual_prcn_dt[:10]
-    )
-
-    return {
-        "available": True,
-        "stat_dt": actual_stat_dt,
-        "prcn_dt": actual_prcn_dt,
-        "result": data.get("result"),
-        "info_cnt": len(hourly_df),
-        "data": hourly_df
-    }
 
 def fetch_latest_available_traffic(
     visit_date,
@@ -1087,12 +953,21 @@ def build_live_traffic_heatmap_data(
     reference_dt
 ):
     if current_traffic.empty:
+        emit_traffic_diagnostic(
+            "heatmap_match", outcome="input_empty", output_rows=0
+        )
         return pd.DataFrame()
 
     if baseline_data.empty:
+        emit_traffic_diagnostic(
+            "heatmap_match", outcome="input_empty", output_rows=0
+        )
         return pd.DataFrame()
 
     if coordinate_data.empty:
+        emit_traffic_diagnostic(
+            "heatmap_match", outcome="input_empty", output_rows=0
+        )
         return pd.DataFrame()
 
     comparison = (
@@ -1104,6 +979,12 @@ def build_live_traffic_heatmap_data(
     )
 
     if comparison.empty:
+        emit_traffic_diagnostic(
+            "heatmap_match",
+            outcome="comparison_empty",
+            comparison_rows=0,
+            output_rows=0,
+        )
         return pd.DataFrame()
 
     coordinates = coordinate_data.copy()
@@ -1126,6 +1007,14 @@ def build_live_traffic_heatmap_data(
         how="left"
     )
 
+    comparison_rows = len(comparison)
+    coordinate_matched_rows = int(
+        heatmap_data[["longitude", "latitude"]]
+        .notna()
+        .all(axis=1)
+        .sum()
+    )
+
     heatmap_data = heatmap_data.dropna(
         subset=[
             "longitude",
@@ -1135,7 +1024,29 @@ def build_live_traffic_heatmap_data(
     ).copy()
 
     if heatmap_data.empty:
+        outcome = (
+            "coordinates_unmatched"
+            if coordinate_matched_rows == 0
+            else "invalid_rows"
+        )
+        emit_traffic_diagnostic(
+            "heatmap_match",
+            outcome=outcome,
+            comparison_rows=comparison_rows,
+            coordinate_matched_rows=coordinate_matched_rows,
+            valid_rows=0,
+            output_rows=0,
+        )
         return pd.DataFrame()
+
+    emit_traffic_diagnostic(
+        "heatmap_match",
+        outcome="matched",
+        comparison_rows=comparison_rows,
+        coordinate_matched_rows=coordinate_matched_rows,
+        valid_rows=len(heatmap_data),
+        output_rows=len(heatmap_data),
+    )
 
     heatmap_data["traffic_reference_dt"] = (
         reference_dt.strftime(
@@ -1465,6 +1376,20 @@ else:
 
 traffic_error_message = None
 
+if not selected_place:
+    emit_traffic_diagnostic(
+        "request_skipped", reason="place_unselected"
+    )
+    emit_traffic_diagnostic(
+        "fallback",
+        active=(active_heatmap_type == "demo"),
+        reason=(
+            "place_unselected"
+            if active_heatmap_type == "demo"
+            else "none"
+        ),
+    )
+
 if selected_place:
     initial_cached_traffic = (
         load_latest_traffic_snapshot(
@@ -1493,6 +1418,9 @@ if selected_place:
 
 
     if initial_cache_is_usable:
+        emit_traffic_diagnostic(
+            "request_skipped", reason="fresh_cache"
+        )
         current_traffic = initial_cached_traffic["data"]
         traffic_stat_dt = initial_cached_traffic["stat_dt"]
         traffic_data_source = "cache"
@@ -1600,6 +1528,15 @@ if selected_place:
         in ["recent", "stale"]
     )
 
+    emit_traffic_diagnostic(
+        "traffic_inputs",
+        traffic_usable=traffic_data_is_usable,
+        baseline_available=traffic_baseline_available,
+        baseline_rows=len(traffic_baseline_data),
+        coordinate_available=traffic_coordinate_available,
+        coordinate_rows=len(traffic_link_coordinate_data),
+    )
+
     if not traffic_data_is_usable:
         current_traffic = pd.DataFrame()
 
@@ -1630,6 +1567,12 @@ if selected_place:
 
         except Exception as heatmap_error:
             live_heatmap_error = str(heatmap_error)
+            emit_traffic_diagnostic(
+                "heatmap_match",
+                outcome="empty",
+                output_rows=0,
+                error_category=traffic_error_category(heatmap_error),
+            )
             live_heatmap_data = pd.DataFrame()
 
     live_heatmap_saved = False
@@ -1658,6 +1601,25 @@ if selected_place:
             ]
             .iloc[0]
         )
+
+    if active_heatmap_type != "demo":
+        fallback_reason = "none"
+    elif not traffic_data_is_usable:
+        fallback_reason = "traffic_unavailable"
+    elif not traffic_baseline_available:
+        fallback_reason = "baseline_unavailable"
+    elif not traffic_coordinate_available:
+        fallback_reason = "coordinates_unavailable"
+    elif live_heatmap_error is not None:
+        fallback_reason = "heatmap_error"
+    else:
+        fallback_reason = "heatmap_empty"
+
+    emit_traffic_diagnostic(
+        "fallback",
+        active=(active_heatmap_type == "demo"),
+        reason=fallback_reason,
+    )
 
 
 
